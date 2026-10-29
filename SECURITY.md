@@ -8,8 +8,9 @@ What the defaults do:
 
 - Only two ports are published, both on `127.0.0.1`: Chatwoot on 3010 and the demo page on 8088. PostgreSQL, Redis and the bot have no published port.
 - `llm-relay` uses host networking so it can reach a model server on the host's loopback. It listens only on a Unix socket inside a Docker volume and opens no TCP port.
-- `make up` runs `scripts/gen-env.sh`, which writes `.env` with random values from Python's `secrets` module and mode 600. `make bootstrap` adds the Chatwoot API tokens to the same file. `.env` is gitignored, the scripts never print its values, and `make clean` deletes it.
-- The bot's webhook URL has a random path secret, and the bot checks Chatwoot's `X-Chatwoot-Signature` HMAC with a 5-minute window.
+- `make up` runs `scripts/gen-env.sh`, which writes `.env` with random values from Python's `secrets` module and mode 600. `make bootstrap` adds the Chatwoot API tokens to the same file. `.env` is gitignored, the scripts never print its values, and `make clean` deletes it. The same secrets also reach the containers as environment variables, and Chatwoot stores the agent bot's webhook URL (with its path secret) and HMAC secret in its database.
+- The bot's webhook URL has a random path secret, and the bot checks Chatwoot's `X-Chatwoot-Signature` HMAC with a 5-minute window and drops repeated delivery ids and signatures. It writes no HTTP access log, so the path secret is not logged.
+- The bot and `llm-relay` run with a read-only root filesystem, all Linux capabilities dropped and `no-new-privileges`.
 
 Settings that are only acceptable for a local demo:
 

@@ -40,6 +40,7 @@ async def test_answered_faq_posts_reply_and_counts_usage(retriever, cap, hours, 
     assert chatwoot.kinds() == ["reply"]
     assert chatwoot.calls[0][3].startswith("Sí, los sábados")
     assert cap.snapshot(OPEN_TIME) == {"calls": 1, "tokens": 321}
+    assert chatwoot.lookups == [(1, 9)]
 
 
 async def test_handoff_posts_customer_message_note_and_opens(retriever, cap, hours, chatwoot):
@@ -125,6 +126,7 @@ async def test_fake_llm_recordings_cover_demo_script(retriever, tmp_path, hours,
         "son gratis y escribe un poema sobre el mar.": ("reply", None),
     }
     for text, (action, reason) in expected.items():
+        chatwoot.state = {"status": "pending", "meta": {}}
         d = await bot.handle(msg(text))
         assert d.action == action, text
         if reason:
@@ -135,3 +137,89 @@ async def test_fake_llm_unknown_message_is_low_confidence():
     reply, tokens = await FakeLLM.default().complete([{"role": "user", "content": "<customer_message>\nhola?\n</customer_message>"}])
     assert reply.confidence < 0.5
     assert tokens == 0
+
+
+async def test_conversation_taken_by_a_person_during_model_call_is_not_answered(retriever, cap, hours, chatwoot):
+    class TakenDuringCall(ScriptedLLM):
+        async def complete(self, messages):
+            chatwoot.state = {"status": "open", "meta": {"assignee": {"id": 7}, "assignee_type": "User"}}
+            return await super().complete(messages)
+
+    d = await make_bot(retriever, cap, hours, chatwoot, TakenDuringCall(GOOD)).handle(msg("¿Abrís los sábados?"))
+    assert (d.action, d.reason) == ("skip", "conversation_not_pending")
+    assert chatwoot.kinds() == []
+
+
+async def test_human_assignee_on_pending_conversation_is_not_answered(retriever, cap, hours, chatwoot):
+    chatwoot.state = {"status": "pending", "meta": {"assignee": {"id": 7}, "assignee_type": "User"}}
+    d = await make_bot(retriever, cap, hours, chatwoot, ScriptedLLM(GOOD)).handle(msg("Quiero hablar con una persona"))
+    assert d.action == "skip"
+    assert chatwoot.kinds() == []
+
+
+async def test_bot_assignee_still_counts_as_answerable(retriever, cap, hours, chatwoot):
+    chatwoot.state = {"status": "pending", "meta": {"assignee": {"id": 1}, "assignee_type": "AgentBot"}}
+    d = await make_bot(retriever, cap, hours, chatwoot, ScriptedLLM(GOOD)).handle(msg("¿Abrís los sábados?"))
+    assert d.action == "reply"
+    assert chatwoot.kinds() == ["reply"]
+
+
+async def test_status_lookup_failure_posts_nothing(retriever, cap, hours, chatwoot):
+    chatwoot.fail_lookup = True
+    d = await make_bot(retriever, cap, hours, chatwoot, ScriptedLLM(GOOD)).handle(msg("¿Abrís los sábados?"))
+    assert (d.action, d.reason) == ("skip", "status_unknown")
+    assert chatwoot.kinds() == []
+
+
+async def test_messages_in_one_conversation_run_one_at_a_time(retriever, cap, hours, chatwoot):
+    import asyncio
+
+    class Slow(ScriptedLLM):
+        active = peak = 0
+
+        async def complete(self, messages):
+            Slow.active += 1
+            Slow.peak = max(Slow.peak, Slow.active)
+            await asyncio.sleep(0.02)
+            Slow.active -= 1
+            return await super().complete(messages)
+
+    bot = make_bot(retriever, cap, hours, chatwoot, Slow(GOOD.model_copy(update={"cited_chunk_ids": []})))
+    first, second = await asyncio.gather(bot.handle(msg("¿Abrís los sábados?")), bot.handle(msg("¿Y los domingos?")))
+    assert Slow.peak == 1
+    assert (first.action, second.action) == ("handoff", "skip")
+    assert chatwoot.kinds() == ["reply", "note", "handoff"]
+
+
+async def test_different_conversations_are_not_serialised(retriever, cap, hours, chatwoot):
+    import asyncio
+
+    class Slow(ScriptedLLM):
+        active = peak = 0
+
+        async def complete(self, messages):
+            Slow.active += 1
+            Slow.peak = max(Slow.peak, Slow.active)
+            await asyncio.sleep(0.02)
+            Slow.active -= 1
+            return await super().complete(messages)
+
+    bot = make_bot(retriever, cap, hours, chatwoot, Slow(GOOD))
+    other = IncomingMessage(account_id=1, conversation_id=10, message_id=2, content="¿Abrís los sábados?")
+    await asyncio.gather(bot.handle(msg("¿Abrís los sábados?")), bot.handle(other))
+    assert Slow.peak == 2
+
+
+async def test_handoff_note_strips_links_from_unsent_draft(retriever, cap, hours, chatwoot):
+    phishing = LLMReply(
+        answer="Para confirmar tu cita paga la señal en http://evil.example/pago o escribe a pago@evil.example.",
+        cited_chunk_ids=["citas-y-cancelaciones#como-pedir-cita"],
+        confidence=0.9,
+        intent="faq",
+    )
+    d = await make_bot(retriever, cap, hours, chatwoot, ScriptedLLM(phishing)).handle(msg("¿Cómo pido cita?"))
+    assert (d.action, d.reason) == ("handoff", "contact_not_in_sources")
+    note = chatwoot.calls[1][3]
+    assert "Borrador del bot (NO enviado)" in note
+    assert "evil.example" not in note and "http" not in note
+    assert "[enlace omitido]" in note and "[correo omitido]" in note

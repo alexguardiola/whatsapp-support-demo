@@ -107,3 +107,72 @@ def test_stale_signature_rejected(tmp_path, chatwoot):
         "/webhook/s3cret", content=raw, headers={"X-Chatwoot-Timestamp": ts, "X-Chatwoot-Signature": sign(raw, ts)}
     )
     assert r.status_code == 401
+
+
+def signed_post(c, raw, ts="1800000000", delivery=None, signature=None):
+    headers = {"content-type": "application/json", "X-Chatwoot-Timestamp": ts, "X-Chatwoot-Signature": signature or sign(raw, ts)}
+    if delivery:
+        headers["X-Chatwoot-Delivery"] = delivery
+    return c.post("/webhook/s3cret", content=raw, headers=headers)
+
+
+def test_replayed_delivery_is_dropped(tmp_path, chatwoot):
+    import json
+
+    raw = json.dumps(body()).encode()
+    c = signed_client(tmp_path, chatwoot)
+    assert signed_post(c, raw, delivery="d-1").json() == {"status": "accepted"}
+    again = signed_post(c, raw, delivery="d-1")
+    assert again.status_code == 200 and again.json() == {"status": "duplicate"}
+    assert chatwoot.kinds() == ["reply"]
+
+
+def test_replay_with_a_new_delivery_id_is_dropped_by_signature(tmp_path, chatwoot):
+    import json
+
+    raw = json.dumps(body()).encode()
+    c = signed_client(tmp_path, chatwoot)
+    signed_post(c, raw, delivery="d-1")
+    assert signed_post(c, raw, delivery="d-2").json() == {"status": "duplicate"}
+    assert chatwoot.kinds() == ["reply"]
+
+
+def test_new_deliveries_are_still_accepted(tmp_path, chatwoot):
+    import json
+
+    c = signed_client(tmp_path, chatwoot)
+    first = json.dumps(body()).encode()
+    second = json.dumps(body() | {"id": 2}).encode()
+    assert signed_post(c, first, delivery="d-1").json() == {"status": "accepted"}
+    assert signed_post(c, second, delivery="d-2").json() == {"status": "accepted"}
+
+
+def test_replayed_delivery_without_hmac_is_dropped(tmp_path, chatwoot):
+    c = client(tmp_path, chatwoot)
+    assert c.post("/webhook/s3cret", json=body(), headers={"X-Chatwoot-Delivery": "d-1"}).json() == {"status": "accepted"}
+    assert c.post("/webhook/s3cret", json=body(), headers={"X-Chatwoot-Delivery": "d-1"}).json() == {"status": "duplicate"}
+    assert chatwoot.kinds() == ["reply"]
+
+
+def test_rejected_request_does_not_burn_its_delivery_id(tmp_path, chatwoot):
+    import json
+
+    raw = json.dumps(body()).encode()
+    c = signed_client(tmp_path, chatwoot)
+    assert signed_post(c, raw, delivery="d-1", signature="sha256=" + "0" * 64).status_code == 401
+    assert signed_post(c, raw, delivery="d-1").json() == {"status": "accepted"}
+
+
+def test_non_ascii_signature_is_rejected_not_a_server_error(tmp_path, chatwoot):
+    import json
+
+    raw = json.dumps(body()).encode()
+    c = signed_client(tmp_path, chatwoot)
+    headers = [
+        (b"content-type", b"application/json"),
+        (b"x-chatwoot-timestamp", b"1800000000"),
+        (b"x-chatwoot-signature", "sha256=é".encode()),
+    ]
+    r = c.post("/webhook/s3cret", content=raw, headers=headers)
+    assert r.status_code == 401
+    assert chatwoot.calls == []

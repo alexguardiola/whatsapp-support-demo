@@ -8,7 +8,7 @@ Aceptamos tarjeta, Bizum y efectivo. El pago se hace al terminar cada sesión o 
 
 ## Mutuas y seguros
 
-Trabajamos con las aseguradoras ficticias Salud Norte y Mutua Ribera. Si vienes por una de ellas, trae la autorización. Con otras aseguradoras te damos factura para que pidas el reembolso tú mismo.
+Trabajamos con las aseguradoras ficticias Salud Norte y Mutua Faro Azul. Si vienes por una de ellas, trae la autorización. Con otras aseguradoras te damos factura para que pidas el reembolso tú mismo.
 
 ## Facturas
 

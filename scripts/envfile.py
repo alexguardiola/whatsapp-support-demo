@@ -24,6 +24,8 @@ def update_env(updates: dict[str, str], path: Path = ENV_PATH) -> None:
             seen.add(key)
     lines += [f"{k}={v}" for k, v in updates.items() if k not in seen]
     tmp = path.with_suffix(".tmp")
-    tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    os.chmod(tmp, 0o600)
+    tmp.unlink(missing_ok=True)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
     tmp.replace(path)

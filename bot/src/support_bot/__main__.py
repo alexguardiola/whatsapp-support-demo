@@ -13,7 +13,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
     settings = Settings.from_env(**({"fake_llm": True} if args.fake_llm else {}))
-    uvicorn.run(create_app(settings), host=args.host, port=args.port, log_level="info")
+    uvicorn.run(create_app(settings), host=args.host, port=args.port, log_level="info", access_log=False)
 
 
 if __name__ == "__main__":

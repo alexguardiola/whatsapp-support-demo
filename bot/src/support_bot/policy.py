@@ -18,7 +18,12 @@ _PRECHECK = [
     ("complaint", re.compile(r"\b(queja|quejarme|reclamacion|reclamaciones|denuncia|denunciar)\b")),
     ("refund", re.compile(r"\b(reembolso|reembolsar|devolucion|devolv\w*\s+(el|mi)\s+dinero)\b")),
 ]
-_AMOUNT = re.compile(r"(?:€\s*(\d+(?:[.,]\d+)?))|(?:(\d+(?:[.,]\d+)?)\s*(?:€|euros?\b|eur\b))")
+_NUMBER = r"\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?"
+_AMOUNT = re.compile(rf"(?:€\s*({_NUMBER}))|(?:({_NUMBER})\s*(?:€|euros?\b|eur\b))")
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_URL = re.compile(r"(?:https?://|www\.)[^\s<>()]+|\b(?:[a-z0-9-]{2,}\.)+[a-z]{2,}(?:/[^\s<>()]*)?", re.IGNORECASE)
+_PHONE = re.compile(r"\+?\d[\d\s.()-]{7,}\d")
+_FREE = re.compile(r"\b(gratis|gratuit\w*|sin (?:coste|costo|cargo))\b")
 
 
 @dataclass
@@ -38,8 +43,34 @@ def precheck(message: str) -> str | None:
     return None
 
 
+def _number(raw: str) -> float:
+    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?", raw):
+        raw = raw.replace(".", "")
+    return float(raw.replace(",", "."))
+
+
 def amounts(text: str) -> set[float]:
-    return {float((a or b).replace(",", ".")) for a, b in _AMOUNT.findall(text)}
+    return {_number(a or b) for a, b in _AMOUNT.findall(text)}
+
+
+def contacts(text: str) -> set[str]:
+    """Links, email addresses and phone numbers, normalised so the same contact compares equal."""
+    found = {e.lower() for e in _EMAIL.findall(text)}
+    without_emails = _EMAIL.sub(" ", text)
+    found |= {u.lower().rstrip(".,;:!?") for u in _URL.findall(without_emails)}
+    for phone in _PHONE.findall(without_emails):
+        digits = re.sub(r"\D", "", phone)
+        if len(digits) >= 9:
+            found.add(digits)
+    return found
+
+
+def strip_contacts(text: str) -> str:
+    return _URL.sub("[enlace omitido]", _EMAIL.sub("[correo omitido]", text))
+
+
+def free_claim(text: str) -> bool:
+    return bool(_FREE.search(fold(text)))
 
 
 def handoff(reason: str, reply: LLMReply | None = None) -> Decision:
@@ -70,4 +101,9 @@ def decide(reply: LLMReply | None, retrieved: list[Chunk], min_confidence: float
     cited_amounts = set().union(*(amounts(by_id[cid].text) for cid in valid))
     if not amounts(reply.answer) <= cited_amounts:
         return handoff("price_not_in_sheet", reply)
+    cited_text = " ".join(by_id[cid].text for cid in valid)
+    if not contacts(reply.answer) <= contacts(cited_text):
+        return handoff("contact_not_in_sources", reply)
+    if free_claim(reply.answer) and not free_claim(cited_text):
+        return handoff("free_claim_not_in_sources", reply)
     return Decision("reply", text=reply.answer.strip(), cited_chunk_ids=valid)

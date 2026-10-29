@@ -35,8 +35,19 @@ def cap(tmp_path):
 
 
 class RecordingChatwoot:
+    """Fake Chatwoot. `state` is what GET conversation returns; a hand-off flips it to open, as Chatwoot does."""
+
     def __init__(self):
         self.calls = []
+        self.lookups = []
+        self.state = {"status": "pending", "meta": {}}
+        self.fail_lookup = False
+
+    async def conversation(self, account_id, conversation_id):
+        self.lookups.append((account_id, conversation_id))
+        if self.fail_lookup:
+            raise RuntimeError("chatwoot unreachable")
+        return self.state
 
     async def reply(self, account_id, conversation_id, text):
         self.calls.append(("reply", account_id, conversation_id, text))
@@ -46,6 +57,7 @@ class RecordingChatwoot:
 
     async def hand_off(self, account_id, conversation_id):
         self.calls.append(("handoff", account_id, conversation_id))
+        self.state = {"status": "open", "meta": {}}
 
     def kinds(self):
         return [c[0] for c in self.calls]

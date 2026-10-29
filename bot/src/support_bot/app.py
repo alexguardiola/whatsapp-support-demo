@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
@@ -17,6 +18,7 @@ from .usage import UsageCap
 from .webhook import parse_event
 
 MAX_SIGNATURE_AGE_S = 300
+MAX_SEEN_DELIVERIES = 10_000
 log = logging.getLogger("support_bot")
 
 
@@ -30,10 +32,27 @@ def configure_logging() -> None:
 
 
 def signature_ok(key: str, raw: bytes, ts: str | None, signature: str | None, now: float) -> bool:
-    if not ts or not signature or not ts.isdigit() or abs(now - int(ts)) > MAX_SIGNATURE_AGE_S:
+    if not ts or not signature or not signature.isascii() or not ts.isdigit() or abs(now - int(ts)) > MAX_SIGNATURE_AGE_S:
         return False
     expected = "sha256=" + hmac.new(key.encode(), ts.encode() + b"." + raw, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
+
+
+class ReplayGuard:
+    """Remembers recent delivery ids and signatures so a captured request cannot be replayed inside the window."""
+
+    def __init__(self, ttl_s: float = 2 * MAX_SIGNATURE_AGE_S, max_items: int = MAX_SEEN_DELIVERIES):
+        self.ttl_s, self.max_items = ttl_s, max_items
+        self.seen: OrderedDict[str, float] = OrderedDict()
+
+    def first_time(self, keys: list[str], now: float) -> bool:
+        while self.seen and (next(iter(self.seen.values())) < now - self.ttl_s or len(self.seen) > self.max_items):
+            self.seen.popitem(last=False)
+        if any(k in self.seen for k in keys):
+            return False
+        for k in keys:
+            self.seen[k] = now
+        return True
 
 
 def create_app(
@@ -67,6 +86,7 @@ def create_app(
         except Exception:
             log.exception("failed to handle conversation %s", msg.conversation_id)
 
+    replays = ReplayGuard()
     app = FastAPI(title="support-bot", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.get("/healthz")
@@ -86,6 +106,13 @@ def create_app(
             wall_clock(),
         ):
             raise HTTPException(status_code=401, detail="bad signature")
+        keys = [f"{name}:{value}" for name, value in (
+            ("delivery", request.headers.get("x-chatwoot-delivery")),
+            ("signature", request.headers.get("x-chatwoot-signature") if settings.webhook_hmac_secret else None),
+        ) if value]
+        if keys and not replays.first_time(keys, wall_clock()):
+            log.info("dropped replayed delivery")
+            return {"status": "duplicate"}
         try:
             payload = json.loads(raw)
         except ValueError:

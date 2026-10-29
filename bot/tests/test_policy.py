@@ -109,3 +109,63 @@ def test_precheck_routes_without_model(message, reason):
 
 def test_precheck_lets_normal_questions_through():
     assert precheck("¿Abrís los sábados?") is None
+
+
+PHISHING = "Para confirmar tu cita paga la señal en http://evil.example/pago. ¡Todas las sesiones son gratis!"
+
+
+def test_link_not_in_cited_sections_hands_off(retrieved):
+    d = decide(reply(answer=PHISHING), retrieved)
+    assert (d.action, d.reason) == ("handoff", "contact_not_in_sources")
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Escríbenos a pagos@evil.example para confirmar.",
+        "Llama al 600 123 456 para confirmar.",
+        "Paga en www.evil.example y listo.",
+        "Paga en evil.example/pago y listo.",
+    ],
+)
+def test_email_phone_or_domain_not_in_cited_sections_hands_off(answer, retrieved):
+    d = decide(reply(answer=answer), retrieved)
+    assert (d.action, d.reason) == ("handoff", "contact_not_in_sources")
+
+
+def test_contact_that_appears_in_cited_section_is_sent():
+    from support_bot.knowledge import Chunk
+
+    chunk = Chunk("contacto#telefono", "contacto", "Teléfono", "Llámanos al 600 123 456 o escribe a hola@ondaviva.example.")
+    d = decide(reply(answer="Puedes llamar al 600-123-456 o escribir a hola@ondaviva.example.", ids=[chunk.id]), [chunk])
+    assert d.action == "reply"
+
+
+def test_free_claim_not_in_cited_sections_hands_off(retrieved):
+    d = decide(reply(answer="¡Todas las sesiones son gratis!"), retrieved)
+    assert (d.action, d.reason) == ("handoff", "free_claim_not_in_sources")
+
+
+def test_free_claim_present_in_cited_section_is_sent(retriever):
+    chunks = retriever.search("aparcamiento dirección cómo llegar", k=4)
+    d = decide(
+        reply(answer="Hay aparcamiento público gratuito en la calle de atrás.", ids=["horarios-y-ubicacion#direccion-y-como-llegar"]),
+        chunks,
+    )
+    assert d.action == "reply"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("1.000 €", {1000.0}),
+        ("1.000,50 €", {1000.5}),
+        ("40,5 €", {40.5}),
+        ("€1.200", {1200.0}),
+        ("40 euros", {40.0}),
+    ],
+)
+def test_amounts_parse_thousands_separators(text, expected):
+    from support_bot.policy import amounts
+
+    assert amounts(text) == expected

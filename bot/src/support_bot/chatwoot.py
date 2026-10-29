@@ -4,6 +4,7 @@ import httpx
 
 
 class Inbox(Protocol):
+    async def conversation(self, account_id: int, conversation_id: int) -> dict: ...
     async def reply(self, account_id: int, conversation_id: int, text: str) -> None: ...
     async def private_note(self, account_id: int, conversation_id: int, text: str) -> None: ...
     async def hand_off(self, account_id: int, conversation_id: int) -> None: ...
@@ -22,6 +23,11 @@ class ChatwootClient:
     async def _post(self, path: str, body: dict) -> None:
         r = await self.client.post(path, json=body)
         r.raise_for_status()
+
+    async def conversation(self, account_id: int, conversation_id: int) -> dict:
+        r = await self.client.get(self._conv(account_id, conversation_id))
+        r.raise_for_status()
+        return r.json()
 
     async def reply(self, account_id: int, conversation_id: int, text: str) -> None:
         await self._post(f"{self._conv(account_id, conversation_id)}/messages", {"content": text, "message_type": "outgoing"})

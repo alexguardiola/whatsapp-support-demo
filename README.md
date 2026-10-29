@@ -27,7 +27,7 @@ The business is fictitious: Fisioterapia Ondaviva, a physiotherapy clinic in an 
 Small businesses get the same ten questions every day (opening hours, prices, how to cancel). A bot can answer those. It goes wrong when it invents a price, gives medical advice or argues with an angry customer. This demo makes the safe behaviour the default:
 
 - The bot only answers from the business's documents, and every answer must cite them.
-- Prices come only from the price sheet. Any amount in an answer has to appear in a cited price section.
+- Price questions must cite the price sheet. Any euro amount in an answer has to appear in one of the sections the answer cites.
 - Complaints, refunds, medical or legal questions, bookings and requests for a person go to a human, with a private note explaining why.
 - A daily usage cap stops the bot and leaves the inbox to people.
 - Meta has banned general-purpose assistants on WhatsApp since 15 January 2026, so off-topic requests get a fixed refusal.
@@ -60,7 +60,7 @@ Run the scripted conversation and the unit tests:
 
 ```sh
 make e2e         # six visitor messages through the widget API
-make test        # 74 unit tests, no Docker or model needed
+make test        # 104 unit tests, no Docker or model needed
 ```
 
 `make e2e` prints one JSON line per case and exits 0 when every case got a reply. `"status": "pending"` means the bot answered; `"status": "open"` means it handed the conversation to a person, and `note` holds the first line of the private note. Expect three answers (opening hours, a price from the sheet, and the fixed refusal for the prompt injection) and three hand-offs (a price that is not in the sheet, a complaint, a medical question). The model's wording varies from run to run. On my machine, with `qwen3:14b`, `make e2e` took 36 seconds once and about 5 minutes another time (see [Measured numbers](#measured-numbers)).
@@ -112,7 +112,7 @@ flowchart LR
 - `llm-relay` exists because some hosts' firewalls drop traffic from Docker bridges to the host, so `host.docker.internal:11434` times out. The relay runs with host networking, publishes no port, and forwards a Unix socket in a shared volume to `127.0.0.1:11434`. If your host allows bridge traffic, you can skip it (see [Configuration](#configuration)).
 - The demo page (`demo/`) is a static page served by nginx that embeds the Chatwoot widget. `make bootstrap` writes the widget token to `demo/config.js`.
 
-When the bot hands off, the person in the inbox sees why. This is the "price not in the sheet" case from `make e2e`: the customer got a holding message, and the private note gives the reason, the detected intent and confidence, the retrieved sections and the draft the bot did not send.
+When the bot hands off, the person in the inbox sees why. This is the "price not in the sheet" case from `make e2e`: the customer got a holding message, and the private note gives the reason, the detected intent and confidence, the retrieved sections and the draft the bot did not send, with any link or email address in it replaced by a placeholder.
 
 <p align="center">
   <img src="docs/inbox-handoff.png" alt="Chatwoot inbox with three open conversations handed off by the bot. The selected one asks for the price of dry needling; the bot's private note says the price is not in the price sheet, lists the retrieved sections and shows the unsent draft." width="100%">
@@ -120,7 +120,7 @@ When the bot hands off, the person in the inbox sees why. This is the "price not
 
 ## Guardrails
 
-Every turn ends either as a reply or as a hand-off with a reason code. The reason appears in the private note and in the bot's log.
+Every turn ends as a reply or as a hand-off with a reason code. The reason appears in the private note and in the bot's log. If Chatwoot says right before posting that the conversation is no longer the bot's (`conversation_not_pending`), or cannot be asked (`status_unknown`), the bot posts nothing and only logs the reason.
 
 | Check | Where | Hand-off reason |
 |---|---|---|
@@ -132,15 +132,17 @@ Every turn ends either as a reply or as a hand-off with a reason code. The reaso
 | No citations | `policy.decide` | `no_citations` |
 | A cited id that was not among the retrieved sections | `policy.decide` | `invalid_citation` |
 | Confidence below 0.6 | `policy.decide` | `low_confidence` |
-| An amount in the answer (`40 €`, `€40`, `40 euros`) that does not appear in a cited section | `policy.decide` | `price_not_in_sheet` |
+| An amount in the answer (`40 €`, `€40`, `40 euros`, `1.000 €`) that does not appear in a cited section | `policy.decide` | `price_not_in_sheet` |
+| A link, domain, email address or phone number in the answer that does not appear in a cited section | `policy.decide` | `contact_not_in_sources` |
+| The answer says something is free (`gratis`, `gratuito`, `sin coste`) and no cited section says so | `policy.decide` | `free_claim_not_in_sources` |
 
 Other rules:
 
 - Off-topic requests get a fixed refusal written by the business, never the model's text.
-- Customer messages are untrusted data. They are wrapped in `<customer_message>` tags, and any `<customer_message>`, `<chunk>` or `<context>` tag inside them is removed before the prompt is built, so a message cannot close the delimiter or forge a source. The guardrails above run on the model's output whatever the prompt says, so an injection the model obeys still fails the checks. Tests cover both layers, and `make e2e` sends a real injection attempt.
+- Customer messages are untrusted data. They are wrapped in `<customer_message>` tags, and any `<customer_message>`, `<chunk>` or `<context>` tag inside them is removed before the prompt is built, so a message cannot close the delimiter or forge a source. The guardrails above run on the model's output whatever the prompt says. An injected answer is blocked when it breaks one of them: a hand-off intent, a missing or invented citation, low confidence, or an amount, link, email, phone number or "free" claim that the cited sections do not contain. The checks do not prove the wording is grounded: an answer that cites a real section and stays inside those rules is sent even if its sentences are not in the documents. Tests cover both layers, and `make e2e` sends a real injection attempt.
 - Business hours are Europe/Madrid, weekdays 9:00–14:00 and 16:00–20:00, Saturday 9:00–13:00. Outside those hours a hand-off tells the customer when someone will reply, and the private note says it arrived out of hours.
-- The bot never answers a conversation that is assigned to a person or already open.
-- The bot URL carries a random path secret, and the bot verifies Chatwoot's `X-Chatwoot-Signature` HMAC (with a 5-minute timestamp window) using the agent bot's secret.
+- The bot only answers a conversation that is `pending` with no person assigned. The webhook snapshot is checked first, and Chatwoot is asked again right before posting, because a model turn can take a minute. Messages in the same conversation are handled one at a time, so a second message waits for the first and then sees the hand-off. A person who takes the conversation in the moment between that last check and the post can still see one bot message.
+- The bot URL carries a random path secret, and the bot verifies Chatwoot's `X-Chatwoot-Signature` HMAC (with a 5-minute timestamp window) using the agent bot's secret. A request whose `X-Chatwoot-Delivery` id or signature was already seen in the last 10 minutes is dropped as a replay.
 - Logs record ids, intent, confidence, retrieved and cited sections, tokens and latency per turn. They never record the message text.
 
 ## Configuration
@@ -175,7 +177,7 @@ For a remote endpoint, set `BOT_LLM_UDS=`, `BOT_LLM_BASE_URL`, `BOT_LLM_MODEL` a
 cd bot && uv run pytest -q
 ```
 
-The 74 tests cover citation validation, every hand-off intent and reason, the amount check, the daily cap (including the reset and persistence), business hours, prompt delimiting and the injection cases, webhook parsing (bot-assigned compared with human-assigned conversations), signature verification, the Unix-socket relay, and the `--fake-llm` recordings for the demo script. They need no Docker and no model. CI runs them on every push and pull request.
+The 104 tests cover citation validation, every hand-off intent and reason, the amount, contact and "free" checks, the daily cap (including the reset and persistence), business hours, prompt delimiting and the injection cases, webhook parsing (bot-assigned compared with human-assigned conversations), signature verification and replays, the status re-check before posting and per-conversation ordering (against a fake Chatwoot), the Unix-socket relay, and the `--fake-llm` recordings for the demo script. They need no Docker and no model. CI runs them on every push and pull request.
 
 `--fake-llm` (or `BOT_FAKE_LLM=true`) replays `bot/src/support_bot/recordings.json`. Messages without a recording get an empty, low-confidence reply, so they hand off.
 
@@ -186,6 +188,7 @@ The 74 tests cover citation validation, every hand-off intent and reason, the am
 | `docker compose up` stops with `required variable BOT_WEBHOOK_SECRET is missing a value: run make env` | There is no `.env`, usually because `docker compose` ran before `make up` | Run `make up`, or `make env` and then the compose command |
 | `make bootstrap` prints ``Chatwoot did not answer at http://localhost:3010 within 240s (run `make up` first).`` | The stack is not running, or the migration failed | `docker compose ps`, then `docker compose logs chatwoot-migrate chatwoot-rails` |
 | `make bootstrap` prints ``Already bootstrapped (CHATWOOT_ACCOUNT_ID is set in .env). Run `make clean` to start over.`` | It already ran against this `.env` | Nothing to do. `make clean` and `make up` start over with new credentials |
+| `make bootstrap` stopped halfway (for example `POST /api/v1/accounts/1/teams failed: HTTP 500`) and a second run fails or creates a second account | Bootstrap only records `CHATWOOT_ACCOUNT_ID` at the end, so a partial run leaves objects in Chatwoot that `.env` does not know about | `make clean && make up && make bootstrap` |
 | `make e2e` prints ``Run `make bootstrap` first.`` | `.env` has no widget token yet | Run `make bootstrap` |
 | Every message gets the hand-off text, the private note says `el modelo no respondió o devolvió un formato no válido (llm_error)`, and `docker compose logs bot` shows a line such as `llm error: RemoteProtocolError` | The bot cannot reach the model, or the model is not pulled | On the host, `curl http://127.0.0.1:11434/api/tags` should list `qwen3:14b`. `docker compose logs llm-relay` should show `relaying /relay/llm.sock -> 127.0.0.1:11434` |
 | Answers take over a minute, or end as `llm_error` hand-offs after about 120 seconds | The model runs mostly on the CPU, or it is still loading | Use a GPU or a smaller model (`BOT_LLM_MODEL`), or try the flow with `make fake` |
@@ -234,7 +237,7 @@ The daily cap (`BOT_MAX_CALLS_PER_DAY`, `BOT_MAX_TOKENS_PER_DAY`) puts a ceiling
 ## Security notes
 
 - Only two ports are published, both on `127.0.0.1`: Chatwoot on 3010 and the demo page on 8088. PostgreSQL, Redis and the bot are reachable only on the Docker network, and `llm-relay` listens only on a Unix socket in a volume.
-- Secrets live only in `.env`, which is generated with random values, has mode 600 and is gitignored. The scripts never print them.
+- Secrets are generated with random values into `.env`, which has mode 600 and is gitignored. The scripts never print them. They are not only in `.env`: Docker passes them to the containers as environment variables (visible to anyone who can run `docker inspect`), and Chatwoot keeps the agent bot's URL, with its path secret, and its HMAC secret in its database. The bot does not write HTTP access logs, so the path secret does not reach `docker compose logs`.
 - Images are pinned by tag and `sha256` digest, and Dependabot proposes updates.
 - Chatwoot runs over plain HTTP with `FORCE_SSL=false`. Put it behind HTTPS before it faces anyone else.
 

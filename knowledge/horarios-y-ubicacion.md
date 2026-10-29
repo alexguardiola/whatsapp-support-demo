@@ -8,7 +8,7 @@ Fisioterapia Ondaviva abre de lunes a viernes de 9:00 a 14:00 y de 16:00 a 20:00
 
 ## Dirección y cómo llegar
 
-Estamos en la Calle de los Almendros 14, bajo, en Valdemora (localidad ficticia). La parada de autobús "Plaza Mayor" está a dos minutos a pie. Hay aparcamiento público gratuito en la calle de atrás.
+Estamos en la Calle de los Almendros 14, bajo, en Villalmendra (localidad ficticia). La parada de autobús "Plaza Mayor" está a dos minutos a pie. Hay aparcamiento público gratuito en la calle de atrás.
 
 ## Accesibilidad
 

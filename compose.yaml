@@ -109,6 +109,11 @@ services:
       BOT_MAX_TOKENS_PER_DAY: ${BOT_MAX_TOKENS_PER_DAY:-400000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     volumes:
       - bot_data:/data
       - llm_relay:/relay
@@ -126,6 +131,11 @@ services:
     # Host networking only to reach the model server on the host's loopback; it listens on a
     # Unix socket in a volume and publishes no port.
     network_mode: host
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     healthcheck:
       test: ["CMD", "/app/.venv/bin/python", "-c", "import os, stat, sys; sys.exit(not stat.S_ISSOCK(os.stat('/relay/llm.sock').st_mode))"]
       interval: 10s

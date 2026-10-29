@@ -9,6 +9,15 @@ class IncomingMessage:
     content: str
 
 
+def bot_may_answer(conversation: object) -> bool:
+    """True while the conversation is pending and no person is assigned to it."""
+    if not isinstance(conversation, dict):
+        return False
+    meta = conversation.get("meta") or {}
+    human_assigned = meta.get("assignee") and meta.get("assignee_type") != "AgentBot"
+    return conversation.get("status") == "pending" and not human_assigned
+
+
 def parse_event(payload: object) -> IncomingMessage | None:
     """Return the customer message the bot should handle, or None for anything else."""
     if not isinstance(payload, dict) or payload.get("event") != "message_created":
@@ -20,9 +29,7 @@ def parse_event(payload: object) -> IncomingMessage | None:
     account = payload.get("account") or {}
     if not isinstance(content, str) or not content.strip():
         return None
-    meta = conversation.get("meta") or {}
-    human_assigned = meta.get("assignee") and meta.get("assignee_type") != "AgentBot"
-    if conversation.get("status") != "pending" or human_assigned:
+    if not bot_may_answer(conversation):
         return None
     try:
         return IncomingMessage(int(account["id"]), int(conversation["id"]), int(payload["id"]), content)

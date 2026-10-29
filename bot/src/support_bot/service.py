@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -8,12 +9,13 @@ from .chatwoot import Inbox
 from .hours import BusinessHours
 from .knowledge import Retriever
 from .llm import LLM, LLMError
-from .policy import MIN_CONFIDENCE, Decision, decide, precheck
+from .policy import MIN_CONFIDENCE, Decision, decide, precheck, strip_contacts
 from .prompt import build_messages
 from .usage import UsageCap
-from .webhook import IncomingMessage
+from .webhook import IncomingMessage, bot_may_answer
 
 log = logging.getLogger("support_bot")
+MAX_TRACKED_CONVERSATIONS = 1024
 
 REASONS_ES = {
     "human_request": "el cliente pide hablar con una persona",
@@ -26,6 +28,8 @@ REASONS_ES = {
     "invalid_citation": "cita a una fuente que no estaba en el contexto",
     "low_confidence": "confianza baja",
     "price_not_in_sheet": "precio que no está en la hoja de tarifas",
+    "contact_not_in_sources": "enlace, correo o teléfono que no está en las fuentes citadas",
+    "free_claim_not_in_sources": "dice que algo es gratis y las fuentes citadas no lo dicen",
     "intent:booking": "quiere reservar, cambiar o cancelar una cita",
     "intent:complaint": "queja",
     "intent:refund": "petición de devolución",
@@ -49,8 +53,28 @@ class SupportBot:
     ):
         self.retriever, self.llm, self.cap, self.hours, self.chatwoot = retriever, llm, cap, hours, chatwoot
         self.top_k, self.min_confidence, self.clock = top_k, min_confidence, clock
+        self._locks: dict[int, asyncio.Lock] = {}
+
+    def _lock(self, conversation_id: int) -> asyncio.Lock:
+        if conversation_id not in self._locks and len(self._locks) >= MAX_TRACKED_CONVERSATIONS:
+            for cid in [cid for cid, lock in self._locks.items() if not lock.locked()]:
+                del self._locks[cid]
+        return self._locks.setdefault(conversation_id, asyncio.Lock())
 
     async def handle(self, msg: IncomingMessage) -> Decision:
+        async with self._lock(msg.conversation_id):
+            return await self._handle(msg)
+
+    async def _still_ours(self, msg: IncomingMessage) -> str | None:
+        """The webhook snapshot is stale by the time the model answers, so ask Chatwoot again before posting."""
+        try:
+            conversation = await self.chatwoot.conversation(msg.account_id, msg.conversation_id)
+        except Exception as exc:
+            log.warning("conversation lookup failed: %s", type(exc).__name__)
+            return "status_unknown"
+        return None if bot_may_answer(conversation) else "conversation_not_pending"
+
+    async def _handle(self, msg: IncomingMessage) -> Decision:
         started, now = time.monotonic(), self.clock()
         is_open = self.hours.is_open(now)
         chunks, tokens, reply = [], 0, None
@@ -68,7 +92,9 @@ class SupportBot:
             self.cap.record_tokens(now, tokens)
             decision = decide(reply, chunks, self.min_confidence)
 
-        if decision.action == "reply":
+        if skip := await self._still_ours(msg):
+            decision = Decision("skip", reason=skip)
+        elif decision.action == "reply":
             await self.chatwoot.reply(msg.account_id, msg.conversation_id, decision.text)
         else:
             await self.chatwoot.reply(msg.account_id, msg.conversation_id, self.handoff_text(is_open))
@@ -110,5 +136,5 @@ class SupportBot:
         if chunks:
             lines.append("Fuentes recuperadas: " + ", ".join(c.id for c in chunks) + ".")
         if decision.draft:
-            lines.append(f"Borrador del bot (NO enviado): {decision.draft}")
+            lines.append(f"Borrador del bot (NO enviado): {strip_contacts(decision.draft)}")
         return "\n".join(lines)
