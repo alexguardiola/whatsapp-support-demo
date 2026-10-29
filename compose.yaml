@@ -1,0 +1,156 @@
+name: whatsapp-support-demo
+
+x-chatwoot: &chatwoot
+  image: chatwoot/chatwoot:v4.19.1-ce@sha256:04895c7bd0550d9e74b45b7202787b56f7ee4e891ebbde0c429c8c32901b97cf
+  environment: &chatwoot-env
+    NODE_ENV: production
+    RAILS_ENV: production
+    INSTALLATION_ENV: docker
+    SECRET_KEY_BASE: ${SECRET_KEY_BASE:?run make env}
+    FRONTEND_URL: ${CHATWOOT_URL:-http://localhost:3010}
+    DEFAULT_LOCALE: es
+    ENABLE_ACCOUNT_SIGNUP: "false"
+    FORCE_SSL: "false"
+    POSTGRES_HOST: postgres
+    POSTGRES_USERNAME: postgres
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make env}
+    REDIS_URL: redis://redis:6379
+    REDIS_PASSWORD: ${REDIS_PASSWORD:?run make env}
+    RAILS_LOG_TO_STDOUT: "true"
+    RAILS_MAX_THREADS: "5"
+    ACTIVE_STORAGE_SERVICE: local
+    # Demo only: the bot lives on the private Docker network. Leave unset in production
+    # and give the bot an HTTPS URL instead.
+    SAFE_FETCH_ALLOW_PRIVATE_NETWORK: "true"
+  volumes:
+    - chatwoot_storage:/app/storage
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg16-bookworm@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+    environment:
+      POSTGRES_DB: chatwoot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chatwoot"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4.12-alpine@sha256:8da19c7399dca900c6822a1cf30f9d2285585e2c4b457ff4095b0f4500054d3f
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?run make env}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?run make env}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  chatwoot-migrate:
+    <<: *chatwoot
+    command: ["bundle", "exec", "rails", "db:chatwoot_prepare"]
+    restart: "no"
+
+  chatwoot-rails:
+    <<: *chatwoot
+    entrypoint: docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:${CHATWOOT_PORT:-3010}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 30
+    depends_on:
+      chatwoot-migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+
+  chatwoot-sidekiq:
+    <<: *chatwoot
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    depends_on:
+      chatwoot-migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
+
+  bot:
+    image: whatsapp-support-demo-bot:local
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    environment:
+      BOT_CHATWOOT_URL: http://chatwoot-rails:3000
+      BOT_CHATWOOT_BOT_TOKEN: ${BOT_CHATWOOT_BOT_TOKEN:-}
+      BOT_CHATWOOT_TEAM_ID: ${BOT_CHATWOOT_TEAM_ID:-}
+      BOT_WEBHOOK_SECRET: ${BOT_WEBHOOK_SECRET:?run make env}
+      BOT_WEBHOOK_HMAC_SECRET: ${BOT_WEBHOOK_HMAC_SECRET:-}
+      BOT_FAKE_LLM: ${BOT_FAKE_LLM:-false}
+      # Default: reach the host's Ollama through llm-relay's Unix socket (works even when the
+      # host firewall drops bridge->host traffic). Without a strict firewall you can set
+      # BOT_LLM_UDS= and BOT_LLM_BASE_URL=http://host.docker.internal:11434/v1 instead.
+      BOT_LLM_UDS: ${BOT_LLM_UDS-/relay/llm.sock}
+      BOT_LLM_BASE_URL: ${BOT_LLM_BASE_URL:-http://ollama.relay/v1}
+      BOT_LLM_MODEL: ${BOT_LLM_MODEL:-qwen3:14b}
+      # Only needed for an endpoint that checks the key; empty means the bot sends "ollama".
+      BOT_LLM_API_KEY: ${BOT_LLM_API_KEY:-}
+      BOT_MAX_CALLS_PER_DAY: ${BOT_MAX_CALLS_PER_DAY:-200}
+      BOT_MAX_TOKENS_PER_DAY: ${BOT_MAX_TOKENS_PER_DAY:-400000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - bot_data:/data
+      - llm_relay:/relay
+    depends_on:
+      llm-relay: { condition: service_started }
+    restart: unless-stopped
+
+  llm-relay:
+    image: whatsapp-support-demo-bot:local
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    entrypoint: ["/app/.venv/bin/python", "-m", "support_bot.uds_relay"]
+    command: ["--listen", "/relay/llm.sock", "--target", "${LLM_RELAY_TARGET:-127.0.0.1:11434}"]
+    # Host networking only to reach the model server on the host's loopback; it listens on a
+    # Unix socket in a volume and publishes no port.
+    network_mode: host
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import os, stat, sys; sys.exit(not stat.S_ISSOCK(os.stat('/relay/llm.sock').st_mode))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - llm_relay:/relay
+    restart: unless-stopped
+
+  demo:
+    image: nginx:1.30.6-alpine@sha256:0e52bd054126cdc040b1276c0af347aeb02a41b9cfe305d6094767ac30e97949
+    volumes:
+      - ./demo:/usr/share/nginx/html:ro
+    ports:
+      - "127.0.0.1:${DEMO_PORT:-8088}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  chatwoot_storage:
+  bot_data:
+  llm_relay:

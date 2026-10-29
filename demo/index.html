@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fisioterapia Ondaviva (demo)</title>
+<meta name="description" content="Página de demostración de un negocio ficticio con chat de atención que deriva a una persona.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #14232B;
+    --ink-soft: #5B6B70;
+    --mist: #EAF1EF;
+    --paper: #FFFFFF;
+    --line: #C9D6D2;
+    --accent: #FF5B1F;
+    --accent-ink: #B83A0B;
+    --open: #1F8A5B;
+    --radius: 18px;
+    --display: "Bricolage Grotesque", system-ui, sans-serif;
+    --body: "Figtree", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--mist);
+    color: var(--ink);
+    font: 400 17px/1.55 var(--body);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+  .demo-strip {
+    background: var(--ink);
+    color: #DCE6E3;
+    font: 500 12.5px/1 var(--mono);
+    letter-spacing: .04em;
+    text-align: center;
+    padding: 9px 16px;
+  }
+  .demo-strip b { color: var(--accent); font-weight: 500; }
+
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
+
+  header.nav { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font: 800 22px/1 var(--display); letter-spacing: -.02em; }
+  .brand svg { width: 34px; height: 34px; }
+  .nav ul { display: flex; gap: 28px; list-style: none; margin: 0; padding: 0; font-weight: 500; }
+  .nav ul a { text-decoration: none; color: var(--ink-soft); }
+  .nav ul a:hover { color: var(--ink); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 0; border-radius: 999px; cursor: pointer;
+    font: 600 16px/1 var(--body); text-decoration: none;
+    padding: 15px 24px;
+    transition: transform .15s ease, background .15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #F04E12; }
+  .btn-ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--line); }
+
+  .hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center; padding: 40px 0 72px; }
+  .hero h1 {
+    font: 800 clamp(48px, 7vw, 92px)/.92 var(--display);
+    letter-spacing: -.045em;
+    margin: 0 0 24px;
+  }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero p.lede { font-size: 20px; color: var(--ink-soft); max-width: 30ch; margin: 0 0 32px; }
+  .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  .stage { position: relative; aspect-ratio: 1 / 1.02; background: var(--paper); border-radius: 32px; overflow: hidden; }
+  .stage svg.wave { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .wave path { fill: none; stroke-linecap: round; }
+  .wave .w1 { stroke: var(--accent); stroke-width: 14; stroke-dasharray: 1600; stroke-dashoffset: 1600; animation: draw 2.2s cubic-bezier(.65,0,.35,1) .2s forwards; }
+  .wave .w2 { stroke: var(--line); stroke-width: 2; }
+  .wave circle { fill: var(--ink); }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  .hours-card {
+    position: absolute; left: 24px; right: 24px; bottom: 24px;
+    background: var(--ink); color: #E9F0EE; border-radius: var(--radius);
+    padding: 20px 22px; font-family: var(--mono); font-size: 14px;
+  }
+  .hours-card .now { display: flex; align-items: center; gap: 10px; font: 600 17px/1 var(--body); margin-bottom: 14px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #8A9A9E; }
+  .dot.is-open { background: #39D98A; box-shadow: 0 0 0 5px rgba(57,217,138,.18); }
+  .hours-card table { width: 100%; border-collapse: collapse; }
+  .hours-card td { padding: 5px 0; border-top: 1px solid rgba(255,255,255,.09); }
+  .hours-card td:last-child { text-align: right; color: #B9C8C4; }
+  .hours-card tr.today td { color: #fff; }
+  .hours-card tr.today td:first-child::before { content: "→ "; color: var(--accent); }
+
+  section { padding: 72px 0; }
+  .section-head { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 32px; }
+  h2 { font: 700 clamp(32px, 4vw, 46px)/1 var(--display); letter-spacing: -.035em; margin: 0; }
+  .section-head p { margin: 0; color: var(--ink-soft); max-width: 38ch; }
+
+  .services { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .service { background: var(--paper); border-radius: var(--radius); padding: 28px; }
+  .service h3 { font: 700 23px/1.1 var(--display); letter-spacing: -.02em; margin: 0 0 10px; }
+  .service p { margin: 0; color: var(--ink-soft); }
+  .service .meta { display: block; margin-top: 18px; font: 500 13px/1 var(--mono); color: var(--accent-ink); }
+
+  .prices { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+  .price-list { list-style: none; margin: 0; padding: 0; border-top: 1.5px solid var(--ink); }
+  .price-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+  .price-list span:last-child { font: 700 26px/1 var(--display); letter-spacing: -.02em; }
+  .price-list small { display: block; color: var(--ink-soft); font-size: 14px; }
+  .ask {
+    background: var(--paper); border-radius: var(--radius); padding: 30px;
+    border-left: 6px solid var(--accent);
+  }
+  .ask h3 { font: 700 26px/1.1 var(--display); letter-spacing: -.02em; margin: 0 0 12px; }
+  .ask ul { margin: 16px 0 24px; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .ask li { font: 500 14px/1.4 var(--mono); color: var(--ink); background: var(--mist); border-radius: 10px; padding: 10px 14px; }
+  .ask .fine { font-size: 14px; color: var(--ink-soft); margin: 0; }
+
+  footer { padding: 40px 0 120px; color: var(--ink-soft); font-size: 15px; border-top: 1px solid var(--line); }
+  footer .wrap { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+
+  .setup-note {
+    position: fixed; right: 20px; bottom: 20px; max-width: 320px;
+    background: var(--ink); color: #fff; border-radius: 14px; padding: 16px 18px;
+    font: 500 14px/1.45 var(--mono); display: none;
+  }
+
+  @media (max-width: 900px) {
+    .hero, .prices { grid-template-columns: 1fr; }
+    .services { grid-template-columns: 1fr; }
+    .nav ul { display: none; }
+    .section-head { flex-direction: column; align-items: start; }
+  }
+  @media (max-width: 520px) {
+    .wrap { padding: 0 16px; }
+    .hero { padding-top: 16px; }
+    .stage { aspect-ratio: 1 / 1.25; }
+    .nav .btn { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wave .w1 { animation: none; stroke-dashoffset: 0; }
+    .btn { transition: none; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+  <div class="demo-strip"><b>DEMO</b> · Negocio ficticio con datos sintéticos · El chat responde con un modelo local y te pasa con una persona si duda</div>
+
+  <div class="wrap">
+    <header class="nav">
+      <a class="brand" href="#" aria-label="Fisioterapia Ondaviva, inicio">
+        <svg viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="10" fill="#14232B"/><path d="M6 21c4-9 7-9 11 0s7 9 11 0" stroke="#FF5B1F" stroke-width="3.2" fill="none" stroke-linecap="round"/></svg>
+        Ondaviva
+      </a>
+      <ul>
+        <li><a href="#servicios">Servicios</a></li>
+        <li><a href="#tarifas">Tarifas</a></li>
+        <li><a href="#horario">Horario</a></li>
+      </ul>
+      <button class="btn btn-primary" type="button" data-open-chat>Pedir cita</button>
+    </header>
+
+    <main>
+      <div class="hero">
+        <div>
+          <h1>Vuelve a moverte <em>sin dolor.</em></h1>
+          <p class="lede">Fisioterapia en Valdemora con el mismo fisioterapeuta en cada sesión. Sesiones de 45 minutos, sin listas de espera.</p>
+          <div class="actions">
+            <button class="btn btn-primary" type="button" data-open-chat>Escríbenos por el chat</button>
+            <a class="btn btn-ghost" href="#tarifas">Ver tarifas</a>
+          </div>
+        </div>
+
+        <div class="stage" id="horario">
+          <svg class="wave" viewBox="0 0 500 510" aria-hidden="true">
+            <path class="w2" d="M-20 120 C 80 40, 160 200, 250 120 S 420 40, 520 120"/>
+            <path class="w2" d="M-20 300 C 80 220, 160 380, 250 300 S 420 220, 520 300"/>
+            <path class="w1" d="M-20 210 C 80 90, 170 330, 250 210 S 410 90, 520 210"/>
+            <circle cx="250" cy="210" r="9"/>
+          </svg>
+          <div class="hours-card" aria-live="polite">
+            <div class="now"><span class="dot" id="dot"></span><span id="now-label">Horario de atención</span></div>
+            <table>
+              <tbody id="hours">
+                <tr data-days="1,2,3,4,5"><td>Lunes a viernes</td><td>9:00–14:00 · 16:00–20:00</td></tr>
+                <tr data-days="6"><td>Sábado</td><td>9:00–13:00</td></tr>
+                <tr data-days="0"><td>Domingo y festivos</td><td>Cerrado</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <section id="servicios">
+        <div class="section-head">
+          <h2>Qué tratamos</h2>
+          <p>No hacemos diagnósticos médicos ni atendemos urgencias. Ante una urgencia, llama al 112.</p>
+        </div>
+        <div class="services">
+          <article class="service">
+            <h3>Fisioterapia general</h3>
+            <p>Espalda y cuello, esguinces, tendinopatías y vuelta al deporte tras una lesión.</p>
+            <span class="meta">45 min · sesión individual</span>
+          </article>
+          <article class="service">
+            <h3>Suelo pélvico</h3>
+            <p>En sala privada, durante el embarazo, en el posparto y en cualquier otra etapa.</p>
+            <span class="meta">60 min · primera valoración</span>
+          </article>
+          <article class="service">
+            <h3>Pilates terapéutico</h3>
+            <p>Grupos de 5 personas como máximo, guiados por una fisioterapeuta.</p>
+            <span class="meta">martes y jueves · tarde</span>
+          </article>
+        </div>
+      </section>
+
+      <section id="tarifas">
+        <div class="prices">
+          <div>
+            <div class="section-head"><h2>Tarifas</h2></div>
+            <ul class="price-list">
+              <li><span>Sesión de fisioterapia<small>45 minutos</small></span><span>40 €</span></li>
+              <li><span>Primera visita con valoración<small>60 minutos</small></span><span>50 €</span></li>
+              <li><span>Bono de 5 sesiones<small>caduca a los 3 meses</small></span><span>180 €</span></li>
+              <li><span>Pilates terapéutico<small>1 clase a la semana</small></span><span>60 €/mes</span></li>
+            </ul>
+          </div>
+          <aside class="ask">
+            <h3>¿Dudas? Pregunta por el chat.</h3>
+            <p>El asistente responde con la información de la clínica y te dice de dónde la saca. Si no lo tiene claro, te pasa con recepción.</p>
+            <ul>
+              <li>¿Abrís los sábados por la mañana?</li>
+              <li>¿Cuánto cuesta una sesión de fisioterapia?</li>
+              <li>¿Puedo cancelar la cita el mismo día?</li>
+            </ul>
+            <p class="fine">Quejas, devoluciones y preguntas sobre síntomas las atiende siempre una persona.</p>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      <span>Fisioterapia Ondaviva · Calle de los Almendros 14, Valdemora (localidad ficticia)</span>
+      <span>Página de demostración. No es una clínica real.</span>
+    </div>
+  </footer>
+
+  <div class="setup-note" id="setup-note">El chat aún no está configurado. Ejecuta <code>make bootstrap</code> y recarga la página.</div>
+
+  <script>
+    (function hours() {
+      const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
+      const day = now.getDay(), mins = now.getHours() * 60 + now.getMinutes();
+      const slots = { 1: [[540, 840], [960, 1200]], 6: [[540, 780]] };
+      for (let d = 2; d <= 5; d++) slots[d] = slots[1];
+      const open = (slots[day] || []).some(([a, b]) => mins >= a && mins < b);
+      document.getElementById("dot").classList.toggle("is-open", open);
+      document.getElementById("now-label").textContent = open
+        ? "Abierto ahora · te atiende el equipo"
+        : "Cerrado ahora · el chat sigue respondiendo";
+      document.querySelectorAll("#hours tr").forEach((tr) => {
+        if (tr.dataset.days.split(",").map(Number).includes(day)) tr.classList.add("today");
+      });
+    })();
+  </script>
+  <script src="config.js" onerror="document.getElementById('setup-note').style.display='block'"></script>
+  <script>
+    (function chat() {
+      const cfg = window.ONDAVIVA_CHAT;
+      if (!cfg) return;
+      window.chatwootSettings = { locale: "es", position: "right", type: "expanded_bubble", launcherTitle: "¿Dudas? Escríbenos" };
+      const s = document.createElement("script");
+      s.src = cfg.baseUrl + "/packs/js/sdk.js";
+      s.async = true;
+      s.onload = () => window.chatwootSDK.run({ websiteToken: cfg.websiteToken, baseUrl: cfg.baseUrl });
+      s.onerror = () => { document.getElementById("setup-note").style.display = "block"; };
+      document.head.appendChild(s);
+      document.querySelectorAll("[data-open-chat]").forEach((b) =>
+        b.addEventListener("click", () => window.$chatwoot && window.$chatwoot.toggle("open"))
+      );
+    })();
+  </script>
+</body>
+</html>
