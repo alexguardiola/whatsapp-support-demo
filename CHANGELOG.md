@@ -21,5 +21,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - 104 unit tests that need neither Docker nor a model, and recorded model outputs for `--fake-llm`.
 - Synthetic knowledge base for the fictitious clinic Fisioterapia Ondaviva.
 
-[Unreleased]: https://github.com/SaskullOps/whatsapp-support-demo/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/SaskullOps/whatsapp-support-demo/releases/tag/v0.1.0
+[Unreleased]: https://github.com/alexguardiola/whatsapp-support-demo/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/alexguardiola/whatsapp-support-demo/releases/tag/v0.1.0

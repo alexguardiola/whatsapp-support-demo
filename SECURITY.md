@@ -23,7 +23,7 @@ Only the latest release gets fixes.
 
 ## Reporting a vulnerability
 
-Use GitHub's private vulnerability reporting: open the repository's **Security** tab and choose **Report a vulnerability**, or go to <https://github.com/SaskullOps/whatsapp-support-demo/security/advisories/new>. Please do not open a public issue for a security problem.
+Use GitHub's private vulnerability reporting: open the repository's **Security** tab and choose **Report a vulnerability**, or go to <https://github.com/alexguardiola/whatsapp-support-demo/security/advisories/new>. Please do not open a public issue for a security problem.
 
 Include the commit or release, the steps to reproduce, and what an attacker could do with it.
 

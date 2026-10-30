@@ -11,7 +11,7 @@
   <img alt="Chatwoot Community v4.19.1" src="https://img.shields.io/badge/Chatwoot-v4.19.1--ce-1f93ff?style=flat-square">
   <img alt="Data: synthetic" src="https://img.shields.io/badge/data-synthetic-orange?style=flat-square">
   <img alt="Model: local, via Ollama" src="https://img.shields.io/badge/model-local%20(Ollama)-555?style=flat-square">
-  <a href="https://github.com/SaskullOps/whatsapp-support-demo/actions/workflows/ci.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/SaskullOps/whatsapp-support-demo/ci.yml?branch=main&style=flat-square&label=ci"></a>
+  <a href="https://github.com/alexguardiola/whatsapp-support-demo/actions/workflows/ci.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/alexguardiola/whatsapp-support-demo/ci.yml?branch=main&style=flat-square&label=ci"></a>
 </p>
 
 <p align="center">
@@ -43,7 +43,7 @@ Small businesses get the same ten questions every day (opening hours, prices, ho
 ## Quick start
 
 ```sh
-git clone --branch v0.1.0 https://github.com/SaskullOps/whatsapp-support-demo.git
+git clone --branch v0.1.0 https://github.com/alexguardiola/whatsapp-support-demo.git
 cd whatsapp-support-demo
 make up          # writes .env with random local credentials, starts Chatwoot, the bot and the demo page
 make bootstrap   # creates the account, admin, team, website inbox and agent bot through Chatwoot's APIs
