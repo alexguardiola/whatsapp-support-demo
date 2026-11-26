@@ -1,7 +1,7 @@
 name: whatsapp-support-demo
 
 x-chatwoot: &chatwoot
-  image: chatwoot/chatwoot:v4.19.1-ce@sha256:04895c7bd0550d9e74b45b7202787b56f7ee4e891ebbde0c429c8c32901b97cf
+  image: chatwoot/chatwoot:v4.20.1-ce@sha256:5c88eb71134268cb702ae902bb399a239175c4dc24b3f0c6d6b3a2533a377e43
   environment: &chatwoot-env
     NODE_ENV: production
     RAILS_ENV: production
